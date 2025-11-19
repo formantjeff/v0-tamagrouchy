@@ -1,4 +1,9 @@
 import { PetState } from '../tamagotchi-game'
+import { PetSprite } from '../sprites/pet-sprite'
+import { Mood, Action, EvolutionStage } from '../sprites/sprite-types'
+import { useState } from 'react'
+import { TEEN_SPRITES } from '../sprites/sprite-data'
+import { generateCCode } from '../sprites/c-exporter'
 
 interface MainPetScreenProps {
   petState: PetState
@@ -7,129 +12,128 @@ interface MainPetScreenProps {
   onOpenActions: () => void
 }
 
-const PixelSprite = ({ stage }: { stage: number }) => {
-  const sprites = [
-    // Stage 0 - Egg
-    <svg key="egg" width="80" height="80" viewBox="0 0 16 16" className="pixel-art">
-      <rect x="6" y="3" width="4" height="2" fill="black"/>
-      <rect x="5" y="5" width="6" height="6" fill="black"/>
-      <rect x="4" y="7" width="8" height="4" fill="black"/>
-      <rect x="6" y="11" width="4" height="2" fill="black"/>
-    </svg>,
-    // Stage 1 - Baby
-    <svg key="baby" width="80" height="80" viewBox="0 0 16 16" className="pixel-art">
-      <rect x="5" y="4" width="6" height="4" fill="black"/>
-      <rect x="6" y="5" width="1" height="1" fill="white"/>
-      <rect x="9" y="5" width="1" height="1" fill="white"/>
-      <rect x="4" y="8" width="8" height="5" fill="black"/>
-      <rect x="3" y="10" width="2" height="2" fill="black"/>
-      <rect x="11" y="10" width="2" height="2" fill="black"/>
-    </svg>,
-    // Stage 2 - Teen
-    <svg key="teen" width="96" height="96" viewBox="0 0 16 16" className="pixel-art">
-      <rect x="5" y="3" width="6" height="5" fill="black"/>
-      <rect x="6" y="4" width="1" height="1" fill="white"/>
-      <rect x="9" y="4" width="1" height="1" fill="white"/>
-      <rect x="4" y="8" width="8" height="6" fill="black"/>
-      <rect x="3" y="10" width="2" height="3" fill="black"/>
-      <rect x="11" y="10" width="2" height="3" fill="black"/>
-      <rect x="2" y="13" width="2" height="1" fill="black"/>
-      <rect x="12" y="13" width="2" height="1" fill="black"/>
-    </svg>,
-    // Stage 3 - Adult
-    <svg key="adult" width="96" height="96" viewBox="0 0 16 16" className="pixel-art">
-      <rect x="4" y="2" width="8" height="6" fill="black"/>
-      <rect x="5" y="3" width="1" height="2" fill="white"/>
-      <rect x="10" y="3" width="1" height="2" fill="white"/>
-      <rect x="3" y="8" width="10" height="5" fill="black"/>
-      <rect x="2" y="10" width="2" height="3" fill="black"/>
-      <rect x="12" y="10" width="2" height="3" fill="black"/>
-      <rect x="1" y="13" width="2" height="1" fill="black"/>
-      <rect x="13" y="13" width="2" height="1" fill="black"/>
-    </svg>
-  ]
-  
-  return sprites[stage] || sprites[0]
+const getStage = (stage: number): EvolutionStage => {
+  switch (stage) {
+    case 0: return 'egg'
+    case 1: return 'baby'
+    case 2: return 'teen'
+    case 3: return 'adult'
+    default: return 'teen'
+  }
 }
 
-const MoodIndicator = ({ mood }: { mood: string }) => {
-  const moodSprites: Record<string, JSX.Element> = {
-    happy: (
-      <svg width="32" height="32" viewBox="0 0 8 8" className="pixel-art">
-        <rect x="1" y="1" width="2" height="2" fill="black"/>
-        <rect x="5" y="1" width="2" height="2" fill="black"/>
-        <rect x="1" y="5" width="1" height="1" fill="black"/>
-        <rect x="2" y="6" width="4" height="1" fill="black"/>
-        <rect x="6" y="5" width="1" height="1" fill="black"/>
-      </svg>
-    ),
-    sad: (
-      <svg width="32" height="32" viewBox="0 0 8 8" className="pixel-art">
-        <rect x="1" y="1" width="2" height="2" fill="black"/>
-        <rect x="5" y="1" width="2" height="2" fill="black"/>
-        <rect x="1" y="6" width="1" height="1" fill="black"/>
-        <rect x="2" y="5" width="4" height="1" fill="black"/>
-        <rect x="6" y="6" width="1" height="1" fill="black"/>
-      </svg>
-    ),
-    angry: (
-      <svg width="32" height="32" viewBox="0 0 8 8" className="pixel-art">
-        <rect x="1" y="2" width="2" height="1" fill="black"/>
-        <rect x="1" y="1" width="1" height="1" fill="black"/>
-        <rect x="5" y="2" width="2" height="1" fill="black"/>
-        <rect x="6" y="1" width="1" height="1" fill="black"/>
-        <rect x="2" y="5" width="4" height="1" fill="black"/>
-      </svg>
-    ),
-    excited: (
-      <svg width="32" height="32" viewBox="0 0 8 8" className="pixel-art">
-        <rect x="1" y="1" width="2" height="2" fill="black"/>
-        <rect x="5" y="1" width="2" height="2" fill="black"/>
-        <rect x="3" y="5" width="2" height="2" fill="black"/>
-        <rect x="2" y="6" width="1" height="1" fill="black"/>
-        <rect x="5" y="6" width="1" height="1" fill="black"/>
-      </svg>
-    ),
-    tired: (
-      <svg width="32" height="32" viewBox="0 0 8 8" className="pixel-art">
-        <rect x="1" y="2" width="2" height="1" fill="black"/>
-        <rect x="5" y="2" width="2" height="1" fill="black"/>
-        <rect x="2" y="5" width="4" height="1" fill="black"/>
-      </svg>
-    ),
-    neutral: (
-      <svg width="32" height="32" viewBox="0 0 8 8" className="pixel-art">
-        <rect x="1" y="1" width="2" height="2" fill="black"/>
-        <rect x="5" y="1" width="2" height="2" fill="black"/>
-        <rect x="2" y="5" width="4" height="1" fill="black"/>
-      </svg>
-    )
+const getMood = (mood: string): Mood => {
+  const validMoods: Mood[] = ['happy', 'neutral', 'sad', 'sick', 'sleeping', 'dead']
+  return validMoods.includes(mood as Mood) ? (mood as Mood) : 'neutral'
+}
+
+const getMoodIcon = (mood: string) => {
+  switch (mood) {
+    case 'happy': return '^_^'
+    case 'sad': return 'T_T'
+    case 'sick': return 'X_X'
+    case 'sleeping': return '-_-'
+    case 'dead': return 'RIP'
+    default: return '-_-'
   }
-  
-  return moodSprites[mood] || moodSprites.neutral
 }
 
 export default function MainPetScreen({ petState, onTapPet, onTapStats, onOpenActions }: MainPetScreenProps) {
+  const [showDebug, setShowDebug] = useState(false)
+  const [debugMood, setDebugMood] = useState<Mood | null>(null)
+  const [debugAction, setDebugAction] = useState<Action | null>(null)
+
+  const currentMood = debugMood || getMood(petState.current_mood)
+  const currentAction = debugAction || 'idle'
+
+  const handleExportC = () => {
+    const code = generateCCode(TEEN_SPRITES)
+    console.log(code)
+    alert("C Code exported to console! Press F12 to view.")
+  }
+
   return (
-    <div className="h-full flex flex-col bg-lcd-background text-lcd-foreground font-mono">
+    <div className="h-full flex flex-col bg-lcd-background text-lcd-foreground font-mono relative">
       {/* Header - minimal */}
       <div className="flex items-center justify-between px-3 py-2 border-b-2 border-lcd-foreground">
-        <span className="text-xs font-bold tracking-wider">{petState.name.toUpperCase()}</span>
+        <span 
+          className="text-xs font-bold tracking-wider cursor-pointer"
+          onClick={() => setShowDebug(!showDebug)}
+        >
+          {petState.name.toUpperCase()}
+        </span>
         <div className="flex items-center gap-2">
           <span className="text-xs">AGE:{Math.floor((Date.now() - new Date(petState.born_at).getTime()) / 1000 / 60)}</span>
-          <MoodIndicator mood={petState.current_mood} />
+          <span className="text-xs font-bold">{getMoodIcon(currentMood)}</span>
         </div>
       </div>
 
       {/* Main pet area */}
       <div 
-        className="flex-1 flex flex-col items-center justify-center cursor-pointer active:opacity-70 transition-opacity"
+        className="flex-1 flex flex-col items-center justify-center cursor-pointer active:opacity-70 transition-opacity relative"
         onClick={onTapPet}
       >
-        <div>
-          <PixelSprite stage={petState.evolution_stage} />
-        </div>
+        <PetSprite 
+          stage={getStage(petState.evolution_stage)}
+          mood={currentMood}
+          action={currentAction}
+          scale={8}
+        />
+        
+        {currentMood === 'sleeping' && (
+          <div className="absolute top-10 right-10 animate-bounce">
+            <span className="text-xl font-bold">Z</span>
+          </div>
+        )}
       </div>
+
+      {showDebug && (
+        <div className="absolute top-10 left-2 right-2 bg-white border-2 border-black p-2 z-50 text-[10px] grid grid-cols-2 gap-2 shadow-lg">
+          <div className="col-span-2 font-bold border-b border-black mb-1">DEBUG ANIMATIONS</div>
+          
+          <div className="flex flex-col gap-1">
+            <span className="font-bold">MOOD:</span>
+            {['neutral', 'happy', 'sad', 'sick', 'sleeping'].map((m) => (
+              <button 
+                key={m}
+                onClick={() => { setDebugMood(m as Mood); setDebugAction(null); }}
+                className={`text-left px-1 ${debugMood === m ? 'bg-black text-white' : 'hover:bg-gray-200'}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="font-bold">ACTION:</span>
+            {['idle', 'eating', 'playing', 'cleaning'].map((a) => (
+              <button 
+                key={a}
+                onClick={() => { setDebugAction(a as Action); setDebugMood(null); }}
+                className={`text-left px-1 ${debugAction === a ? 'bg-black text-white' : 'hover:bg-gray-200'}`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+          
+          <button 
+            className="col-span-2 border border-black mt-1 hover:bg-gray-200"
+            onClick={() => { setDebugMood(null); setDebugAction(null); }}
+          >
+            RESET
+          </button>
+
+          <div className="col-span-2 mt-2 pt-2 border-t border-black">
+            <button 
+              onClick={handleExportC}
+              className="w-full border border-blue-500 text-blue-500 px-2 py-1 hover:bg-blue-50 font-bold"
+            >
+              EXPORT C CODE
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom buttons */}
       <div className="grid grid-cols-2 gap-2 p-2">
