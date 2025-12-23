@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react'
+"use client"
+
+import { useEffect, useRef } from "react"
 
 interface CanvasRendererProps {
   pixels: (number | string)[][]
@@ -6,7 +8,7 @@ interface CanvasRendererProps {
   className?: string
 }
 
-export function CanvasRenderer({ pixels, scale = 6, className = '' }: CanvasRendererProps) {
+export function CanvasRenderer({ pixels, scale = 6, className = "" }: CanvasRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const size = pixels.length
 
@@ -14,7 +16,7 @@ export function CanvasRenderer({ pixels, scale = 6, className = '' }: CanvasRend
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext("2d")
     if (!ctx) return
 
     // Clear canvas
@@ -25,10 +27,10 @@ export function CanvasRenderer({ pixels, scale = 6, className = '' }: CanvasRend
       row.forEach((pixel, x) => {
         if (pixel === 0) return
 
-        if (typeof pixel === 'string') {
+        if (typeof pixel === "string") {
           ctx.fillStyle = pixel
         } else {
-          ctx.fillStyle = '#000000'
+          ctx.fillStyle = "#000000"
         }
         ctx.fillRect(x * scale, y * scale, scale, scale)
       })
@@ -41,10 +43,12 @@ export function CanvasRenderer({ pixels, scale = 6, className = '' }: CanvasRend
       width={size * scale}
       height={size * scale}
       className={className}
-      style={{ 
-        width: size * scale, 
+      style={{
+        width: size * scale,
         height: size * scale,
-        imageRendering: 'pixelated' // Keep sharp edges
+        imageRendering: "pixelated", // Keep sharp edges
+        maxWidth: "100%", // Prevent overflow
+        height: "auto", // Maintain aspect ratio
       }}
     />
   )
