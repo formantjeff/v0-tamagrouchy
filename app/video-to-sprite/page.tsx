@@ -11,7 +11,7 @@ import { Slider } from "@/components/ui/slider"
 import { CanvasRenderer } from "@/components/sprites/canvas-renderer"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch" // Import Switch for toggle
-import { generateLVGLHeader } from "@/components/sprites/lvgl-exporter"
+import { generateBinaryAnimation, calculateFlashSize, type ColorFormat } from "@/components/sprites/binary-exporter"
 
 // Helper type for Crop
 interface Crop {
@@ -184,16 +184,18 @@ export default function VideoToSpritePage() {
   const [isProcessing, setIsProcessing] = useState(false)
 
   // Settings
-  const [width, setWidth] = useState(16)
-  const [height, setHeight] = useState(16)
+  const [width, setWidth] = useState(240)
+  const [height, setHeight] = useState(280)
   const [frameCount, setFrameCount] = useState(4)
   const [threshold, setThreshold] = useState(128)
   const [frameDuration, setFrameDuration] = useState(200) // ms per frame for playback
 
   // New Settings
   const [mode, setMode] = useState<"1-bit" | "color">("1-bit")
-  const [compressionScheme, setCompressionScheme] = useState<string>("raw")
+  const [compressionScheme, setCompressionScheme] = useState<ColorFormat>("GRAYSCALE_8BIT")
   const [estimatedSize, setEstimatedSize] = useState<number>(0)
+  const [lockAspect, setLockAspect] = useState(true)
+  const [scalingMode, setScalingMode] = useState<"fit" | "fill" | "stretch">("fill")
 
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(0)
@@ -230,67 +232,36 @@ export default function VideoToSpritePage() {
       return
     }
 
-    let size = 0
-    const pixelCount = width * height
-    const totalFrames = frames.length
-
-    if (mode === "1-bit") {
-      if (compressionScheme === "raw") {
-        // 1 bit per pixel, packed into bytes
-        size = Math.ceil(pixelCount / 8) * totalFrames
-      } else if (compressionScheme === "rle") {
-        // Simple RLE estimation: 2 bytes per run (count, value)
-        // We need to actually calculate runs for accuracy
-        let totalRuns = 0
-        frames.forEach((frame) => {
-          const flatPixels = (frame as number[][]).flat()
-          let currentRun = 1
-          for (let i = 1; i < flatPixels.length; i++) {
-            if (flatPixels[i] === flatPixels[i - 1] && currentRun < 255) {
-              currentRun++
-            } else {
-              totalRuns++
-              currentRun = 1
-            }
-          }
-          totalRuns++ // Last run
-        })
-        size = totalRuns * 2
-      }
-    } else {
-      // Color modes
-      if (compressionScheme === "rgb565") {
-        size = pixelCount * 2 * totalFrames
-      } else if (compressionScheme === "rgb888") {
-        size = pixelCount * 3 * totalFrames
-      } else if (compressionScheme === "rgba8888") {
-        size = pixelCount * 4 * totalFrames
-      }
-    }
-
+    const size = calculateFlashSize(width, height, frames.length, compressionScheme)
     setEstimatedSize(size)
-  }, [frames, mode, compressionScheme, width, height])
+  }, [frames, compressionScheme, width, height])
 
   // Reset compression scheme when mode changes
   useEffect(() => {
     if (mode === "1-bit") {
-      setCompressionScheme("raw")
+      setCompressionScheme("GRAYSCALE_8BIT")
     } else {
-      setCompressionScheme("rgb565")
+      setCompressionScheme("RGB565")
     }
   }, [mode])
 
-  const handleDownloadC = () => {
+  const handleDownloadBinary = () => {
     if (frames.length === 0) return
 
-    const fps = Math.round(1000 / frameDuration)
-    const cContent = generateLVGLHeader(frames, width, height, mode, fps, exportName)
+    const binaryData = generateBinaryAnimation(frames, {
+      width,
+      height,
+      frameCount: frames.length,
+      fps: Math.round(1000 / frameDuration),
+      colorFormat: compressionScheme,
+      compression: 0, // No compression for now
+    })
 
-    const blob = new Blob([cContent], { type: "text/plain" })
+    const blob = new Blob([binaryData], { type: "application/octet-stream" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `${exportName}.c`
+    a.download = `${exportName}.bin`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -374,11 +345,46 @@ export default function VideoToSpritePage() {
       canvas.width = width
       canvas.height = height
 
-      // Calculate source coordinates from crop
+      // Calculate source coordinates from crop (crop percentages are relative to video natural size)
       const sx = (crop.x / 100) * video.videoWidth
       const sy = (crop.y / 100) * video.videoHeight
       const sw = (crop.width / 100) * video.videoWidth
       const sh = (crop.height / 100) * video.videoHeight
+
+      const sourceAspect = sw / sh
+      const targetAspect = width / height
+
+      let drawWidth = width
+      let drawHeight = height
+      let offsetX = 0
+      let offsetY = 0
+
+      if (scalingMode === "fit") {
+        // Fit with letterboxing (preserve aspect ratio, no cropping)
+        if (sourceAspect > targetAspect) {
+          drawWidth = width
+          drawHeight = width / sourceAspect
+          offsetY = (height - drawHeight) / 2
+        } else {
+          drawHeight = height
+          drawWidth = height * sourceAspect
+          offsetX = (width - drawWidth) / 2
+        }
+      } else if (scalingMode === "fill") {
+        // Fill canvas (preserve aspect ratio, crop to fit)
+        if (sourceAspect > targetAspect) {
+          // Source is wider - make it fit height and crop width
+          drawHeight = height
+          drawWidth = height * sourceAspect
+          offsetX = -(drawWidth - width) / 2 // negative offset to center the crop
+        } else {
+          // Source is taller - make it fit width and crop height
+          drawWidth = width
+          drawHeight = width / sourceAspect
+          offsetY = -(drawHeight - height) / 2 // negative offset to center the crop
+        }
+      }
+      // else "stretch" - use default drawWidth/drawHeight (fills canvas, distorts)
 
       // Capture frames
       for (let i = 0; i < frameCount; i++) {
@@ -391,7 +397,27 @@ export default function VideoToSpritePage() {
           video.onseeked = resolve
         })
 
-        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height)
+        ctx.fillStyle = "#000000"
+        ctx.fillRect(0, 0, width, height)
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(0, 0, width, height)
+        ctx.clip()
+
+        ctx.drawImage(
+          video,
+          sx,
+          sy,
+          sw,
+          sh, // source rect from crop
+          offsetX,
+          offsetY,
+          drawWidth,
+          drawHeight, // dest rect
+        )
+
+        ctx.restore()
 
         // Get pixel data
         const imageData = ctx.getImageData(0, 0, width, height)
@@ -556,10 +582,10 @@ export default function VideoToSpritePage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>2. Settings</CardTitle>
+                <CardTitle className="text-black">2. Settings</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
+              <CardContent className="space-y-4">
+                <div className="space-y-4">
                   <Label>Output Style</Label>
                   <div className="flex items-center gap-4">
                     <Button
@@ -579,48 +605,77 @@ export default function VideoToSpritePage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Compression Scheme</Label>
-                  <Select value={compressionScheme} onValueChange={setCompressionScheme}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select compression" />
+                <div className="space-y-4">
+                  <Label>Color Format</Label>
+                  <Select
+                    value={compressionScheme}
+                    onValueChange={(value) => setCompressionScheme(value as ColorFormat)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {mode === "1-bit" ? (
                         <>
-                          <SelectItem value="raw">Raw Bitmap (1-bit packed)</SelectItem>
-                          <SelectItem value="rle">RLE (Run-Length Encoded)</SelectItem>
+                          <SelectItem value="GRAYSCALE_8BIT">Grayscale 8-bit (1 byte/pixel)</SelectItem>
+                          <SelectItem value="GRAYSCALE_4BIT">Grayscale 4-bit (0.5 bytes/pixel)</SelectItem>
                         </>
                       ) : (
                         <>
-                          <SelectItem value="rgb565">RGB565 (16-bit)</SelectItem>
-                          <SelectItem value="rgb888">RGB888 (24-bit)</SelectItem>
-                          <SelectItem value="rgba8888">RGBA8888 (32-bit)</SelectItem>
+                          <SelectItem value="RGB565">RGB565 (2 bytes/pixel)</SelectItem>
                         </>
                       )}
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-4">
                   <div className="flex justify-between">
                     <Label>
                       Resolution ({width}x{height})
                     </Label>
                   </div>
-                  <Slider
-                    value={[width]}
-                    min={8}
-                    max={280}
-                    step={8}
-                    onValueChange={(v) => {
-                      setWidth(v[0])
-                      setHeight(v[0])
-                    }}
-                  />
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Switch id="lock-aspect" checked={lockAspect} onCheckedChange={setLockAspect} />
+                      <Label htmlFor="lock-aspect" className="text-sm cursor-pointer">
+                        Lock aspect ratio (240:280)
+                      </Label>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Width: {width}px</Label>
+                      <Slider
+                        value={[width]}
+                        min={8}
+                        max={240}
+                        step={8}
+                        onValueChange={(v) => {
+                          setWidth(v[0])
+                          if (lockAspect) {
+                            setHeight(Math.round((v[0] * 280) / 240))
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Height: {height}px</Label>
+                      <Slider
+                        value={[height]}
+                        min={8}
+                        max={280}
+                        step={8}
+                        onValueChange={(v) => {
+                          setHeight(v[0])
+                          if (lockAspect) {
+                            setWidth(Math.round((v[0] * 240) / 280))
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-4">
                   <div className="flex justify-between">
                     <Label>Frame Count ({frameCount})</Label>
                   </div>
@@ -628,7 +683,7 @@ export default function VideoToSpritePage() {
                 </div>
 
                 {mode === "1-bit" && (
-                  <div className="space-y-2">
+                  <div className="space-y-4">
                     <div className="flex justify-between">
                       <Label>Threshold ({threshold})</Label>
                       <span className="text-xs text-gray-500">Adjust for contrast</span>
@@ -637,7 +692,7 @@ export default function VideoToSpritePage() {
                   </div>
                 )}
 
-                <div className="space-y-2">
+                <div className="space-y-4">
                   <Label>Export Name</Label>
                   <Input
                     value={exportName}
@@ -645,6 +700,25 @@ export default function VideoToSpritePage() {
                     placeholder="sprite_anim"
                   />
                   <p className="text-xs text-gray-500">Used for C variables and filename</p>
+                </div>
+
+                <div className="space-y-4 pt-2">
+                  <Label className="text-black font-semibold">Scaling Mode</Label>
+                  <Select value={scalingMode} onValueChange={(v: any) => setScalingMode(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fill">Fill (Crop to Fit)</SelectItem>
+                      <SelectItem value="fit">Fit (Letterbox)</SelectItem>
+                      <SelectItem value="stretch">Stretch (Distort)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-600">
+                    {scalingMode === "fill" && "Fills entire frame, crops excess (recommended)"}
+                    {scalingMode === "fit" && "Fits entire video, adds black bars if needed"}
+                    {scalingMode === "stretch" && "Stretches to fill, may distort image"}
+                  </p>
                 </div>
 
                 <Button
@@ -662,14 +736,14 @@ export default function VideoToSpritePage() {
           <div className="space-y-6">
             <Card className="h-full">
               <CardHeader>
-                <CardTitle>3. Preview</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>3. Preview</span>
+                  <span className="text-sm font-normal text-gray-600">
+                    Estimated Flash Size: {formatBytes(estimatedSize)}
+                  </span>
+                </CardTitle>
                 <CardDescription>
                   Generated {width}x{height} {mode} animation
-                  {frames.length > 0 && (
-                    <span className="block mt-1 font-bold text-black">
-                      Estimated Flash Size: {formatBytes(estimatedSize)}
-                    </span>
-                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-8">
@@ -728,8 +802,8 @@ export default function VideoToSpritePage() {
                     <Button onClick={exportToConsole} className="w-full bg-transparent" variant="outline">
                       EXPORT TO CONSOLE
                     </Button>
-                    <Button onClick={handleDownloadC} className="w-full bg-transparent" variant="outline">
-                      EXPORT C FILE
+                    <Button onClick={handleDownloadBinary} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                      EXPORT BINARY FILE (.bin)
                     </Button>
                   </>
                 ) : (

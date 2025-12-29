@@ -10,7 +10,8 @@ interface CanvasRendererProps {
 
 export function CanvasRenderer({ pixels, scale = 6, className = "" }: CanvasRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const size = pixels.length
+  const height = pixels.length
+  const width = pixels[0]?.length || height
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -40,12 +41,12 @@ export function CanvasRenderer({ pixels, scale = 6, className = "" }: CanvasRend
   return (
     <canvas
       ref={canvasRef}
-      width={size * scale}
-      height={size * scale}
+      width={width * scale}
+      height={height * scale}
       className={className}
       style={{
-        width: size * scale,
-        height: size * scale,
+        width: width * scale,
+        height: height * scale,
         imageRendering: "pixelated", // Keep sharp edges
         maxWidth: "100%", // Prevent overflow
         height: "auto", // Maintain aspect ratio
