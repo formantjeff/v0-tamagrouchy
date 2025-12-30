@@ -248,6 +248,8 @@ export default function VideoToSpritePage() {
   const handleDownloadBinary = () => {
     if (frames.length === 0) return
 
+    const sanitizedName = exportName.trim() || "sprite_anim"
+
     const binaryData = generateBinaryAnimation(frames, {
       width,
       height,
@@ -261,7 +263,7 @@ export default function VideoToSpritePage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `${exportName}.bin`
+    a.download = `${sanitizedName}.bin`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
